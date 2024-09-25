@@ -13,21 +13,28 @@ import (
 
 type config struct {
 	Listen               string `env:"CT_LISTEN"`
-	ListenPprof          string `yaml:"listen_pprof" env:"CT_LISTEN_PPROF"`
-	ListenMetricsAddress string `yaml:"listen_metrics_address" env:"CT_LISTEN_METRICS_ADDRESS"`
-	MetricsIncludeTenant bool   `yaml:"metrics_include_tenant" env:"CT_METRICS_INCLUDE_TENANT"`
+	ListenPprof          string `env:"CT_LISTEN_PPROF"           yaml:"listen_pprof"`
+	ListenMetricsAddress string `env:"CT_LISTEN_METRICS_ADDRESS" yaml:"listen_metrics_address"`
+	MetricsIncludeTenant bool   `env:"CT_METRICS_INCLUDE_TENANT" yaml:"metrics_include_tenant"`
 
-	Target     string `env:"CT_TARGET"`
-	EnableIPv6 bool   `yaml:"enable_ipv6" env:"CT_ENABLE_IPV6"`
+	Target struct {
+		Endpoint           string `yaml:"endpoint" env:"CT_TARGET_ENDPOINT"`
+		CertFile           string `yaml:"cert_file" env:"CT_TARGET_CERT_FILE"`
+		KeyFile            string `yaml:"key_file" env:"CT_TARGET_KEY_FILE"`
+		CAFile             string `yaml:"ca_file" env:"CT_TARGET_CA_FILE"`
+		InsecureSkipVerify bool   `yaml:"insecure_skip_verify" env:"CT_TARGET_INSECURE_SKIP_VERIFY"`
+	} `yaml:"target"`
 
-	LogLevel          string        `yaml:"log_level" env:"CT_LOG_LEVEL"`
-	Timeout           time.Duration `env:"CT_TIMEOUT"`
-	TimeoutShutdown   time.Duration `yaml:"timeout_shutdown" env:"CT_TIMEOUT_SHUTDOWN"`
-	Concurrency       int           `env:"CT_CONCURRENCY"`
-	Metadata          bool          `env:"CT_METADATA"`
-	LogResponseErrors bool          `yaml:"log_response_errors" env:"CT_LOG_RESPONSE_ERRORS"`
+	EnableIPv6 bool `yaml:"enable_ipv6" env:"CT_ENABLE_IPV6"`
+
+	LogLevel          string        `yaml:"log_level"               env:"CT_LOG_LEVEL"`
+	Timeout           time.Duration `                               env:"CT_TIMEOUT"`
+	TimeoutShutdown   time.Duration `yaml:"timeout_shutdown"        env:"CT_TIMEOUT_SHUTDOWN"`
+	Concurrency       int           `                               env:"CT_CONCURRENCY"`
+	Metadata          bool          `                               env:"CT_METADATA"`
+	LogResponseErrors bool          `yaml:"log_response_errors"     env:"CT_LOG_RESPONSE_ERRORS"`
 	MaxConnDuration   time.Duration `yaml:"max_connection_duration" env:"CT_MAX_CONN_DURATION"`
-	MaxConnsPerHost   int           `env:"CT_MAX_CONNS_PER_HOST" yaml:"max_conns_per_host"`
+	MaxConnsPerHost   int           `yaml:"max_conns_per_host"      env:"CT_MAX_CONNS_PER_HOST"`
 
 	Auth struct {
 		Egress struct {
@@ -40,7 +47,7 @@ type config struct {
 		Label              string   `env:"CT_TENANT_LABEL"`
 		LabelList          []string `yaml:"label_list" env:"CT_TENANT_LABEL_LIST" envSeparator:","`
 		Prefix             string   `yaml:"prefix" env:"CT_TENANT_PREFIX"`
-		PrefixPreferSource bool     `yaml:"prefix_prefer_source" env:"CT_TENANT_PREFIX_PREFER_SOURCE`
+		PrefixPreferSource bool     `yaml:"prefix_prefer_source" env:"CT_TENANT_PREFIX_PREFER_SOURCE"`
 		LabelRemove        bool     `yaml:"label_remove" env:"CT_TENANT_LABEL_REMOVE"`
 		Header             string   `env:"CT_TENANT_HEADER"`
 		Default            string   `env:"CT_TENANT_DEFAULT"`
@@ -81,8 +88,33 @@ func configLoad(file string) (*config, error) {
 		cfg.LogLevel = "warn"
 	}
 
-	if cfg.Target == "" {
-		cfg.Target = "127.0.0.1:9090"
+	if cfg.Target.Endpoint == "" {
+		cfg.Target.Endpoint = "127.0.0.1:9090"
+	}
+
+	if cfg.Target.CertFile != "" {
+		_, err := os.Stat(cfg.Target.CertFile)
+		if err != nil {
+			return nil, errors.Wrap(err, "Unable to find cert file")
+		}
+	}
+
+	if cfg.Target.KeyFile != "" {
+		_, err := os.Stat(cfg.Target.KeyFile)
+		if err != nil {
+			return nil, errors.Wrap(err, "Unable to find key file")
+		}
+	}
+
+	if cfg.Target.CAFile != "" {
+		_, err := os.Stat(cfg.Target.CAFile)
+		if err != nil {
+			return nil, errors.Wrap(err, "Unable to find CA file")
+		}
+	}
+
+	if cfg.Target.InsecureSkipVerify {
+		cfg.Target.InsecureSkipVerify = false
 	}
 
 	if cfg.Timeout == 0 {

@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,7 +36,23 @@ var (
 		Namespace: "cortex_tenant",
 		Name:      "timeseries_batches_received_bytes",
 		Help:      "Size in bytes of timeseries batches received.",
-		Buckets:   []float64{0.5, 1, 10, 25, 100, 250, 500, 1000, 5000, 10000, 30000, 300000, 600000, 1800000, 3600000},
+		Buckets: []float64{
+			0.5,
+			1,
+			10,
+			25,
+			100,
+			250,
+			500,
+			1000,
+			5000,
+			10000,
+			30000,
+			300000,
+			600000,
+			1800000,
+			3600000,
+		},
 	})
 	metricTimeseriesReceived = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "cortex_tenant",
@@ -44,7 +63,25 @@ var (
 		Namespace: "cortex_tenant",
 		Name:      "timeseries_request_duration_milliseconds",
 		Help:      "HTTP write request duration for tenant-specific timeseries in milliseconds, filtered by response code.",
-		Buckets:   []float64{0.5, 1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000, 1800000, 3600000},
+		Buckets: []float64{
+			0.5,
+			1,
+			5,
+			10,
+			25,
+			50,
+			100,
+			250,
+			500,
+			1000,
+			2500,
+			5000,
+			10000,
+			30000,
+			60000,
+			1800000,
+			3600000,
+		},
 	},
 		[]string{"code", "tenant"},
 	)
@@ -189,7 +226,12 @@ func (p *processor) handle(ctx *fh.RequestCtx) {
 				r := p.send(clientIP, reqID, tenantPrefix+p.cfg.Tenant.Default, wrReqIn)
 				if r.err != nil {
 					ctx.Error(r.err.Error(), fh.StatusInternalServerError)
-					p.Errorf("src=%s req_id=%s: unable to proxy metadata: %s", clientIP, reqID, r.err)
+					p.Errorf(
+						"src=%s req_id=%s: unable to proxy metadata: %s",
+						clientIP,
+						reqID,
+						r.err,
+					)
 					return
 				}
 				ctx.SetStatusCode(r.code)
@@ -237,7 +279,13 @@ func (p *processor) handle(ctx *fh.RequestCtx) {
 
 		if r.code < 200 || r.code >= 300 {
 			if p.cfg.LogResponseErrors {
-				p.Errorf("src=%s req_id=%s HTTP code %d (%s)", clientIP, reqID, r.code, string(r.body))
+				p.Errorf(
+					"src=%s req_id=%s HTTP code %d (%s)",
+					clientIP,
+					reqID,
+					r.code,
+					string(r.body),
+				)
 			}
 		}
 
@@ -245,7 +293,8 @@ func (p *processor) handle(ctx *fh.RequestCtx) {
 			code, body = r.code, r.body
 		}
 
-		metricTimeseriesRequestDurationMilliseconds.WithLabelValues(strconv.Itoa(r.code), metricTenant).Observe(r.duration)
+		metricTimeseriesRequestDurationMilliseconds.WithLabelValues(strconv.Itoa(r.code), metricTenant).
+			Observe(r.duration)
 	}
 
 	if errs.ErrorOrNil() != nil {
@@ -259,7 +308,9 @@ out:
 	ctx.SetStatusCode(code)
 }
 
-func (p *processor) createWriteRequests(wrReqIn *prompb.WriteRequest) (map[string]*prompb.WriteRequest, error) {
+func (p *processor) createWriteRequests(
+	wrReqIn *prompb.WriteRequest,
+) (map[string]*prompb.WriteRequest, error) {
 	// Create per-tenant write requests
 	m := map[string]*prompb.WriteRequest{}
 
@@ -313,7 +364,12 @@ func (p *processor) marshal(wr *prompb.WriteRequest) (bufOut []byte, err error) 
 	return snappy.Encode(nil, b), nil
 }
 
-func (p *processor) dispatch(clientIP net.Addr, reqID uuid.UUID, tenantPrefix string, m map[string]*prompb.WriteRequest) (res []result) {
+func (p *processor) dispatch(
+	clientIP net.Addr,
+	reqID uuid.UUID,
+	tenantPrefix string,
+	m map[string]*prompb.WriteRequest,
+) (res []result) {
 	var wg sync.WaitGroup
 	res = make([]result, len(m))
 
@@ -353,7 +409,10 @@ func (p *processor) processTimeseries(ts *prompb.TimeSeries) (tenant string, err
 
 	if tenant == "" {
 		if p.cfg.Tenant.Default == "" {
-			return "", fmt.Errorf("label(s): {'%s'} not found", strings.Join(p.cfg.Tenant.LabelList, "','"))
+			return "", fmt.Errorf(
+				"label(s): {'%s'} not found",
+				strings.Join(p.cfg.Tenant.LabelList, "','"),
+			)
 		}
 
 		return p.cfg.Tenant.Default, nil
@@ -369,7 +428,12 @@ func (p *processor) processTimeseries(ts *prompb.TimeSeries) (tenant string, err
 	return
 }
 
-func (p *processor) send(clientIP net.Addr, reqID uuid.UUID, tenant string, wr *prompb.WriteRequest) (r result) {
+func (p *processor) send(
+	clientIP net.Addr,
+	reqID uuid.UUID,
+	tenant string,
+	wr *prompb.WriteRequest,
+) (r result) {
 	start := time.Now()
 	r.tenant = tenant
 
@@ -394,8 +458,24 @@ func (p *processor) send(clientIP net.Addr, reqID uuid.UUID, tenant string, wr *
 	}
 
 	req.Header.SetMethod(fh.MethodPost)
-	req.SetRequestURI(p.cfg.Target)
+	req.SetRequestURI(p.cfg.Target.Endpoint)
 	req.SetBody(buf)
+
+	if p.cfg.Target.CertFile != "" && p.cfg.Target.KeyFile != "" && p.cfg.Target.CAFile != "" {
+
+		certPool := x509.NewCertPool()
+		caCert, _ := os.ReadFile(p.cfg.Target.CAFile)
+		certPool.AppendCertsFromPEM(caCert)
+
+		p.cli.TLSConfig = &tls.Config{
+			InsecureSkipVerify: p.cfg.Target.InsecureSkipVerify,
+			Certificates: []tls.Certificate{{
+				Certificate: [][]byte{[]byte(p.cfg.Target.CertFile)},
+				PrivateKey:  p.cfg.Target.KeyFile,
+			}},
+			ClientCAs: certPool,
+		}
+	}
 
 	if err = p.cli.DoTimeout(req, resp, p.cfg.Timeout); err != nil {
 		r.err = err

@@ -3,7 +3,12 @@ listen_pprof: 0.0.0.0:7008
 listen_metrics_address: 0.0.0.0:9090
 metrics_include_tenant: true
 
-target: http://127.0.0.1:9091/receive
+target: 
+  endpoint: http://127.0.0.1:9091/receive
+  cert_file: ""
+  key_file: ""
+  ca_file: ""
+  insecure_skip_verify: false
 enable_ipv6: false
 max_conns_per_host: 64
 

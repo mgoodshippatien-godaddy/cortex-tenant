@@ -22,7 +22,8 @@ const (
 	testConfig = `listen: 0.0.0.0:8080
 listen_pprof: 0.0.0.0:7008
 
-target: http://127.0.0.1:9091/receive
+target:
+	endpoint: http://127.0.0.1:9091/receive
 log_level: debug
 timeout: 50ms
 timeout_shutdown: 100ms
@@ -40,7 +41,8 @@ tenant:
 	testConfigWithValues = `listen: 0.0.0.0:8080
 listen_pprof: 0.0.0.0:7008
 
-target: http://127.0.0.1:9091/receive
+target: 
+	endpoint: http://127.0.0.1:9091/receive
 log_level: debug
 timeout: 50ms
 timeout_shutdown: 100ms
